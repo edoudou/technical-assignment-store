@@ -1,14 +1,13 @@
 import {JSONObject} from "./json-types";
-// import {isForbiddenKey} from "./utils/forbiddenKeys.utils";
 import {PATH_SEPARATOR} from "./utils/paths.utils";
 import {
     canGetStoreResultFromStoreValue,
     getStoreResultFromStoreValue, isJSONArray, isJSONObject,
     isStore,
-    isStoreValue,
     StoreResult,
     StoreValue
 } from "./utils/store.utils";
+import {isForbiddenKey} from "./utils/forbiddenKeys.utils";
 
 export type Permission = "r" | "w" | "rw" | "none";
 
@@ -38,11 +37,11 @@ export function Restrict<K extends Store>(policy?: Permission): (target: K, prop
 }
 
 export class Store implements IStore {
-    private data: Record<string, StoreValue> = {};
+    // private data: Record<string StoreValue> = {};
     policies: Record<string, Permission> = {};
 
     constructor(public defaultPolicy: Permission = "rw") {
-        const proto = Object.getPrototypeOf(this) as Store | undefined;
+        const proto = Object.getPrototypeOf(this) as Store;
         if (proto && proto.policies) {
             this.policies = {...proto.policies} as Record<string, Permission>;
         }
@@ -79,10 +78,8 @@ export class Store implements IStore {
     }
 
     entries(): JSONObject {
-        Object.keys(this).forEach(it => this.forceInitData(it))
-
         return Object.fromEntries(
-            Object.entries(this.data).map(([key, value]) => {
+            Object.entries(this._getData()).map(([key, value]) => {
                 if (!this._isAllowedToRead(key)) {
                     return [key, undefined];
                 }
@@ -94,15 +91,6 @@ export class Store implements IStore {
             }).filter(([key, value]) => {
                 return Boolean(value);
             }))
-    }
-
-    private forceInitData(key: string): void {
-        if (!this.data[key] && this.hasOwnProperty(key)) {
-            const value = this[key as keyof Store];
-            if (isStoreValue(value)) {
-                this.data[key] = value;
-            }
-        }
     }
 
     private _isAllowedToRead(path: string): boolean {
@@ -155,7 +143,7 @@ export class Store implements IStore {
             // Convert to StoreResult
             const store = new Store(this.defaultPolicy);
             store.writeEntries(firstValue);
-            this.data[firstKey] = store;
+            this._setDataKey(firstKey, store);
             return store.read(remainingPath);
         }
     }
@@ -176,7 +164,7 @@ export class Store implements IStore {
         if (isStore(firstValue)) {
             firstValue.write(remainingPath, valueToWrite);
         } else {
-            this.data[firstKey] = valueToWrite;
+            this._setDataKey(firstKey, valueToWrite);
         }
     }
 
@@ -195,8 +183,7 @@ export class Store implements IStore {
 
     private _getInformationFromPath(path: string) {
         const [firstKey, ...remainingKeys] = path.split(PATH_SEPARATOR);
-        this.forceInitData(firstKey);
-        const firstValue = this.data[firstKey];
+        const firstValue = this._getData()[firstKey];
         const policy = this.policies[firstKey] || this.defaultPolicy;
 
         return {
@@ -205,5 +192,19 @@ export class Store implements IStore {
             remainingPath: remainingKeys.join(PATH_SEPARATOR),
             policy,
         }
+    }
+
+    private _getData(): Record<string, StoreValue> {
+        const data = Object.fromEntries(Object.entries(this).filter(([key]) => {
+            return !isForbiddenKey(key);
+        }));
+        return data as Record<string, StoreValue>;
+    }
+
+    private _setDataKey(key: string, value: StoreValue): void {
+        if(isForbiddenKey(key)) {
+            throw new Error("Forbidden key");
+        }
+        (this as unknown as Record<string, StoreValue>)[key] = value;
     }
 }
