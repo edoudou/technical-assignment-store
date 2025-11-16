@@ -1,4 +1,4 @@
-import {JSONObject} from "./json-types";
+import {JSONArray, JSONObject} from "./json-types";
 import {PATH_SEPARATOR} from "./utils/paths.utils";
 import {
     canGetStoreResultFromStoreValue,
@@ -127,16 +127,16 @@ export class Store implements IStore {
             remainingPath,
         } = this._getInformationFromPath(path);
 
+        if (isJSONArray(firstValue) && remainingPath) {
+            return this._getNestedArray(firstValue, remainingPath);
+        }
+
         if (canGetStoreResultFromStoreValue(firstValue)) {
             const storeResult = getStoreResultFromStoreValue(firstValue);
             if (isStore(storeResult) && remainingPath) {
                 return storeResult.read(remainingPath);
             }
             return storeResult;
-        }
-
-        if (isJSONArray(firstValue)) {
-            throw new Error('Array is not implemented');
         }
 
         if (isJSONObject(firstValue)) {
@@ -202,9 +202,53 @@ export class Store implements IStore {
     }
 
     private _setDataKey(key: string, value: StoreValue): void {
-        if(isForbiddenKey(key)) {
+        if (isForbiddenKey(key)) {
             throw new Error("Forbidden key");
         }
         (this as unknown as Record<string, StoreValue>)[key] = value;
+    }
+
+    private _getNestedArray(array: JSONArray, path: string) {
+        let {value, remainingPath} = this._getArrayValue(array, path);
+
+        while (isJSONArray(value)) {
+            const response = this._getArrayValue(value, remainingPath);
+            value = response.value;
+            remainingPath = response.remainingPath;
+        }
+
+        if (canGetStoreResultFromStoreValue(value)) {
+            const storeResult = getStoreResultFromStoreValue(value);
+            if (isStore(storeResult) && remainingPath) {
+                return storeResult.read(remainingPath);
+            }
+            return storeResult;
+        }
+
+        if (isJSONObject(value)) {
+            // Convert to StoreResult
+            const store = new Store(this.defaultPolicy);
+            store.writeEntries(value);
+            return store.read(remainingPath);
+        }
+
+        return value;
+    }
+
+    private _getArrayValue(array: JSONArray, path: string) {
+        const {
+            firstKey,
+            remainingPath,
+        } = this._getInformationFromPath(path);
+        const index = Number(firstKey);
+
+        if (index >= 0 && index < array.length) {
+            return {
+                value: array[index],
+                remainingPath: remainingPath,
+            }
+        }
+
+        throw new Error("Invalid array path");
     }
 }

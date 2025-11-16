@@ -326,10 +326,36 @@ describe("Test Store - Permission Inheritance", () => {
     class ChildStore extends ParentStore { }
     const baseChildStore = new ChildStore();
     const nestedChildStore = baseChildStore.read(
-      "parentProp:parentProp:parentProp"
+        "parentProp:parentProp:parentProp"
     ) as Store;
     expect(nestedChildStore).toBeInstanceOf(ChildStore);
     expect(baseChildStore.allowedToWrite("parentProp")).toBe(false);
     expect(nestedChildStore.allowedToWrite("parentProp")).toBe(false);
+  });
+});
+
+
+/*
+
+11. Test Array
+
+These tests verify that nested keys correctly inherit permissions from their parent keys.
+
+*/
+
+describe("Custom Test - Test Array", () => {
+  it("Store with Array should work", () => {
+    class ArrayStore extends Store {
+      @Restrict('rw')
+      myArray = ['test'];
+      @Restrict('rw')
+      myNestedArray = [['nestedTest']];
+      @Restrict('rw')
+      myObjectArray = [{ value: "test" }];
+    }
+    const store = new ArrayStore();
+    expect(store.read("myArray:0")).toBe("test");
+    expect(store.read("myNestedArray:0:0")).toBe("nestedTest");
+    expect(store.read("myObjectArray:0:value")).toBe("test");
   });
 });
